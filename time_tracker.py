@@ -1,306 +1,385 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, simpledialog, messagebox
 from datetime import datetime, timedelta
+import csv
 
 
-class TimeTracker(tk.Frame):
+class Task:
+    """Class to represent a task"""
 
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.master = master
+    def __init__(self, name):
+        self.name = name
+        self.total_time = timedelta(seconds=0)
+        self.start_time = None
+
+    def start(self):
+        """Start the task timer"""
+        self.start_time = datetime.now()
+
+    def stop(self):
+        """Stop the task timer and update total time"""
+        if self.start_time:
+            end_time = datetime.now()
+            elapsed_time = end_time - self.start_time
+            self.total_time += elapsed_time
+            self.start_time = None
+
+    def reset(self):
+        """Reset the task timer"""
+        self.total_time = timedelta(seconds=0)
+        self.start_time = None
+
+
+class TimeTracker(tk.Tk):
+    """Class to represent the main TimeTracker app"""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.parent = parent
+
+        # Initialize task variables
         self.tasks = {}
         self.current_task = None
-        self.init_ui()
 
-    def init_ui(self):
-        # Set window size
-        self.master.geometry("500x400")
+        # Initialize timer variables
+        self.elapsed_time = timedelta(seconds=0)
+        self.start_time = None
+        self.timer_label = None
 
-        # Create widgets
-        self.task_label = tk.Label(self, text="Task:")
-        self.task_entry = tk.Entry(self)
-        self.task_entry.bind("<Return>", self.add_task)
-        self.task_list = tk.Listbox(self, selectmode="SINGLE", height=10, width=40)
-        self.task_list.bind("<<ListboxSelect>>", self.on_task_selected)
-        self.start_btn = tk.Button(self, text="Start", command=self.start_timer, state="disabled")
-        self.pause_btn = tk.Button(self, text="Pause", command=self.pause_timer, state="disabled")
-        self.stop_btn = tk.Button(self, text="Stop", command=self.stop_timer, state="disabled")
-        self.time_label = tk.Label(self, text="00:00:00", font=("Arial", 36))
+        # Initialize UI elements
+        self.start_btn = None
+        self.pause_btn = None
+        self.stop_btn = None
+        self.task_name_entry = None
+        self.task_listbox = None
+        self.task_list = []
 
-        # Create layout
-        task_layout = tk.Frame(self)
-        self.task_label.pack(side="left")
-        self.task_entry.pack(side="left")
-        task_layout.pack(pady=5)
+        # Create and configure the UI
+        self._create_widgets()
 
-        task_list_layout = tk.Frame(self)
-        self.task_list.pack(side="left")
-        task_list_layout.pack(pady=5)
+    def _create_widgets(self):
+        """Create and configure the UI elements"""
 
-        button_layout = tk.Frame(self)
+        # Task selection frame
+        task_frame = ttk.Frame(self)
+        task_frame.pack(padx=10, pady=10)
+
+        ttk.Label(task_frame, text="Select or create a task:").grid(row=0, column=0, sticky="w")
+
+        # Create the task combo box
+        self.task_var = tk.StringVar(value="")
+        self.task_combo = ttk.Combobox(task_frame, textvariable=self.task_var, state="readonly")
+        self.task_combo.grid(row=1, column=0, pady=5, sticky="we")
+
+        # Create the new task button
+        ttk.Button(task_frame, text="New Task", command=self.create_task).grid(row=1, column=1, padx=5)
+
+        # Create the task name entry box and create task button
+        self.task_name_var = tk.StringVar()
+        self.task_name_entry = ttk.Entry(task_frame, textvariable=self.task_name_var)
+        self.task_name_entry.grid(row=2, column=0, pady=5, sticky="we")
+        ttk.Button(task_frame, text="Create Task", command=self.create_task_from_entry).grid(row=2, column=1, padx=5)
+
+        # Create the task list box and delete task button
+        self.task_listbox = tk.Listbox(task_frame)
+        self.task_listbox.grid(row=3, column=0, columnspan=2, pady=5, sticky="we")
+        ttk.Button(task_frame, text="Delete Task", command=self.delete_task).grid(row=4, column=1, padx=5)
+
+        # Timer frame
+        timer_frame = ttk.Frame(self)
+        timer_frame.pack(padx=10, pady=10)
+
+        self.timer_var = tk.StringVar(value="00:00:00")
+        self.timer_label = ttk.Label(timer_frame, textvariable=self.timer_var, font=("Helvetica",    50))
+        self.timer_label.pack()
+
+        # Create the timer buttons
+        self.start_btn = ttk.Button(timer_frame, text="Start", command=self.start_timer)
         self.start_btn.pack(side="left", padx=5)
+        self.pause_btn = ttk.Button(timer_frame, text="Pause", command=self.pause_timer, state="disabled")
         self.pause_btn.pack(side="left", padx=5)
+        self.stop_btn = ttk.Button(timer_frame, text="Stop", command=self.stop_timer, state="disabled")
         self.stop_btn.pack(side="left", padx=5)
-        button_layout.pack(pady=5)
 
-        self.time_label.pack(pady=20)
+        # Load tasks from file
+        self.load_tasks()
 
-        # Set timer
-        self.timer_interval = 1000  # milliseconds
-        self.last_update = datetime.now()
+        # Update the task list box
+        self.update_task_list()
 
-    def add_task(self, event):
-        task_name = self.task_entry.get()
-        if task_name:
-            self.tasks[task_name] = {"elapsed_time": timedelta(), "running": False}
-            self.task_list.insert("end", task_name)
-            self.task_entry.delete(0, "end")
+    def load_tasks(self):
+        """Load saved tasks from file"""
+        try:
+            with open("tasks.csv", "r") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    task_name, total_seconds_str = row
+                    total_seconds = int(total_seconds_str)
+                    self.tasks[task_name] = Task(task_name)
+                    self.tasks[task_name].total_time = timedelta(seconds=total_seconds)
+        except FileNotFoundError:
+            pass
 
-    def on_task_selected(self, event):
-        selected_task = self.task_list.get(self.task_list.curselection())
-        self.current_task = selected_task
-        if self.tasks[selected_task]["running"]:
-            self.start_btn.config(state="disabled")
-            self.pause_btn.config(state="normal")
-            self.stop_btn.config(state="normal")
-        else:
-            self.start_btn.config(state="normal")
-            self.pause_btn.config(state="disabled")
-            self.stop_btn.config(state="disabled")
+    def save_tasks(self):
+        """Save tasks to file"""
+        with open("tasks.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            for task in self.tasks.values():
+                writer.writerow([task.name, task.total_time.total_seconds()])
 
-    def start_timer(self):
-        self.tasks[self.current_task]["running"] = True
-        self.start_btn.config(state="disabled")
-        self.pause_btn.config(state="normal")
-        self.stop_btn.config(state="normal")
-        self.last_update = datetime.now()
+    def update_task_list(self):
+        """Update the task list box with the current task names"""
+        self.task_listbox.delete(0, tk.END)
+        self.task_list = list(self.tasks.keys())
+        self.task_list.sort()
+        for task_name in self.task_list:
+            self.task_listbox.insert(tk.END, task_name)
 
-    def pause_timer(self):
-        self.tasks[self.current_task]["running"] = False
-        self.pause_btn.config(state="disabled")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="normal")
-        self.tasks[self.current_task]["elapsed_time"] += datetime.now() - self.last_update
+    def create_task(self):
+        """Create a new task with the name in the task_name_entry box"""
 
-    def stop_timer(self):
-        self.tasks[self.current_task]["running"] = False
-        self.pause_btn.config(state="disabled")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
-        self.task_list.selection_clear(0, "end")
-        self.tasks[self.current.task]["elapsed_time"] += datetime.now() - self.last_update
-        self.task_list.selection_clear(0, "end")
-        self.current_task = None
+        task_name = self.task_name_var.get()
 
-    def update_timer(self):
-        if self.current_task is not None and self.tasks[self.current_task]["running"]:
-            elapsed_time = self.tasks[self.current_task]["elapsed_time"] + (datetime.now() - self.last_update)
-        else:
-            elapsed_time = timedelta()
+        if not task_name:
+            messagebox.showerror("Error", "Please enter a task name")
+            return
 
-        self.time_label.configure(text=str(elapsed_time))
+        # Create the task object
+        task = Task(task_name)
 
-        self.after(self.timer_interval, self.update_timer)
+        # Add the task to the task list and combo box
+        self.tasks[task.name] = task
+        self.task_list.append(task.name)
+        self.task_combo["values"] = self.task_list
 
-    # Add the following method to create a new task with a unique name
-    def create_new_task(self):
-        i = 1
-        task_name = f"Task {i}"
-        while task_name in self.tasks:
-            i += 1
-            task_name = f"Task {i}"
-        self.tasks[task_name] = {"elapsed_time": timedelta(), "running": False}
-        self.task_list.insert("end", task_name)
+        # Clear the task name entry box
+        self.task_name_var.set("")
 
-    # Add the following method to remove the currently selected task
-    def remove_task(self):
-        if self.current_task is not None:
-            self.tasks.pop(self.current_task)
-            self.task_list.delete(self.task_list.curselection())
-            self.current_task = None
+        # Select the new task in the combo box
+        self.task_combo.set(task.name)
 
-    # Modify the add_task method to check for existing task names and create a new task with a unique name if needed
-    def add_task(self, event):
-        task_name = self.task_entry.get()
-        if task_name:
-            if task_name in self.tasks:
-                task_name = f"{task_name} (1)"
-                while task_name in self.tasks:
-                    task_name = f"{task_name[:-3]}{int(task_name[-2]) + 1})"
-            self.tasks[task_name] = {"elapsed_time": timedelta(), "running": False}
-            self.task_list.insert("end", task_name)
-            self.task_entry.delete(0, "end")
+    def create_task_from_entry(self):
+        """Create a new task with the name in the task_name_entry box"""
 
-    # Modify the on_task_selected method to enable/disable buttons based on the selected task's state
-    def on_task_selected(self, event):
-        selected_task = self.task_list.get(self.task_list.curselection())
-        self.current_task = selected_task
-        if self.tasks[selected_task]["running"]:
-            self.start_btn.config(state="disabled")
-            self.pause_btn.config(state="normal")
-            self.stop_btn.config(state="normal")
-        else:
-            self.start_btn.config(state="normal")
-            self.pause_btn.config(state="disabled")
-            self.stop_btn.config(state="disabled")
+        task_name = self.task_name_var.get()
 
-    # Modify the start_timer method to create a new task with a unique name if no task is currently selected
-    def start_timer(self):
-        if self.current_task is None:
-            self.create_new_task()
-            self.current_task = self.task_list.get("end")
-            self.task_list.selection_clear(0, "end")
-            self.task_list.select_set(self.task_list.size() - 1)
+        if task_name in self.tasks:
+            messagebox.showerror("Error", "Task already exists")
+            return
 
-        self.tasks[self.current_task]["running"] = True
-        self.start_btn.config(state="disabled")
-        self.pause_btn.config(state="normal")
-        self.stop_btn.config(state="normal")
-        self.last_update = datetime.now()
+        # Create the task object
+        task = Task(task_name)
 
-    # Add the following method to stop all running tasks
-    def stop_all(self):
-        for task_name in self.tasks:
-            self.tasks[task_name]["running"] = False
-            self.tasks[task_name]["elapsed_time"] += datetime.now() - self.last_update
+        # Add the task to the task list and combo box
+        self.tasks[task.name] = task
+        self.task_list.append(task.name)
+        self.task_combo["values"] = self.task_list
 
-        self.current_task = None
-        self.task_list.selection_clear(0, "end")
-        self.start_btn.config(state="disabled")
-        self.pause_btn.config(state="disabled")
-        self.stop_btn.config(state="disabled")
+        # Clear the task name entry box
+        self.task_name_var.set("")
 
-    # Modify the init_ui method to include new widgets and rearrange the layout
-    def init_ui(self):
-        # Set window size
-        self.master.geometry("500x400")
-
-        # Create widgets
-        self.task_label = tk.Label(self, text="Task:")
-        self.task_entry = tk.Entry(self)
-        self.task_entry.bind("<Return>", self.add_task)
-        self.task_list = tk.Listbox(self, selectmode="SINGLE", height=10, width=40)
-        self.task_list.bind("<<ListboxSelect>>", self.on_task_selected)
-        self.start_btn = tk.Button(self, text="Start", command=self.start_timer, state="disabled")
-        self.pause_btn = tk.Button(self, text="Pause", command=self.pause_timer, state="disabled")
-        self.stop_btn = tk.Button(self, text="Stop", command=self.stop_timer, state="disabled")
-        self.time_label = tk.Label(self, text="00:00:00", font=("Arial", 36))
-
-        # Create layout
-        task_layout = tk.Frame(self)
-        self.task_label.pack(side="left")
-        self.task_entry.pack(side="left")
-        task_layout.pack(pady=5)
-
-        task_list_layout = tk.Frame(self)
-        self.task_list.pack(side="left")
-        task_list_layout.pack(pady=5)
-
-        button_layout = tk.Frame(self)
-        self.start_btn.pack(side="left", padx=5)
-        self.pause_btn.pack(side="left", padx=5)
-        self.stop_btn.pack(side="left", padx=5)
-        button_layout.pack(pady=5)
-
-        self.time_label.pack(pady=20)
-        # Set timer
-        self.timer_interval = 1000  # milliseconds
-        self.last_update = datetime.now()
-
-        # Create task-specific widgets
-        self.task_name_label = tk.Label(self, text="Task Name:")
-        self.task_name_entry = tk.Entry(self)
-        self.task_time_label = tk.Label(self, text="00:00:00", font=("Arial", 24))
-        self.task_start_btn = tk.Button(self, text="Start", command=self.start_timer, state="disabled")
-        self.task_pause_btn = tk.Button(self, text="Pause", command=self.pause_timer, state="disabled")
-        self.task_stop_btn = tk.Button(self, text="Stop", command=self.stop_timer, state="disabled")
-
-        # Create task-specific layout
-        task_name_layout = tk.Frame(self)
-        self.task_name_label.pack(side="left")
-        self.task_name_entry.pack(side="left")
-        task_name_layout.pack(pady=5)
-
-        task_time_layout = tk.Frame(self)
-        self.task_time_label.pack()
-        task_time_layout.pack(pady=10)
-
-        task_button_layout = tk.Frame(self)
-        self.task_start_btn.pack(side="left", padx=5)
-        self.task_pause_btn.pack(side="left", padx=5)
-        self.task_stop_btn.pack(side="left", padx=5)
-        task_button_layout.pack(pady=5)
-
-        # Hide task-specific widgets initially
-        self.task_name_label.pack_forget()
-        self.task_name_entry.pack_forget()
-        self.task_time_label.pack_forget()
-        self.task_start_btn.pack_forget()
-        self.task_pause_btn.pack_forget()
-        self.task_stop_btn.pack_forget()
-    # Modify the add_task method to include a task name parameter
-    def add_task(self, event=None, task_name=None):
-        if task_name is None:
-            task_name = self.task_entry.get()
-
-        if task_name:
-            self.tasks[task_name] = {"elapsed_time": timedelta(), "running": False}
-            self.task_list.insert("end", task_name, " - 00:00:00")
-            self.task_entry.delete(0, "end")
-
-    def on_task_selected(self, event=None):
-        selected_task = self.task_list.get(self.task_list.curselection())
-        self.current_task = selected_task
-        if self.tasks[selected_task]["running"]:
-            self.start_btn.config(state="disabled")
-            self.pause_btn.config(state="normal")
-            self.stop_btn.config(state="normal")
-        else:
-            self.start_btn.config(state="normal")
-            self.pause_btn.config(state="disabled")
-            self.stop_btn.config(state="disabled")
-        self.update_time_label()
-
-    def start_timer(self):
-        self.tasks[self.current_task]["running"] = True
-        self.start_btn.config(state="disabled")
-        self.pause_btn.config(state="normal")
-        self.stop_btn.config(state="normal")
-        self.last_update = datetime.now()
-
-    def pause_timer(self):
-        self.tasks[self.current_task]["running"] = False
-        self.pause_btn.config(state="disabled")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="normal")
-        self.tasks[self.current_task]["elapsed_time"] += datetime.now() - self.last_update
-        self.update_time_label()
-
-    def stop_timer(self):
-        self.tasks[self.current_task]["running"] = False
-        self.pause_btn.config(state="disabled")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
-        self.task_list.selection_clear(0, "end")
-        self.tasks[self.current_task]["elapsed_time"] += datetime.now() - self.last_update
-        self.update_time_label()
-
-    def update_time_label(self):
-        if self.current_task:
-            time_str = str(self.tasks[self.current_task]["elapsed_time"])
-        else:
-            time_str = "00:00:00"
-        self.time_label.config(text=time_str)
+        # Select the new task in the combo box
+        self.task_combo.set(task.name)
 
     def delete_task(self):
-        selected_task = self.task_list.get(self.task_list.curselection())
-        self.task_list.delete(self.task_list.curselection())
-        del self.tasks[selected_task]
-        self.current_task = None
+        """Delete the selected task"""
+
+        task_name = self.task_var.get()
+
+        if not task_name:
+            messagebox.showerror("Error", "Please select a task to delete")
+            return
+
+        # Confirm task deletion with user
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete the task '{task_name}'?")
+
+        if confirm:
+            # Delete the task from the task list and combo box
+            del self.tasks[task_name]
+            self.task_list.remove(task_name)
+            self.task_combo["values"] = self.task_list
+
+            # Clear the task selection and reset the timer
+            self.task_var.set("")
+            self.reset_timer()
+
+    def start_timer(self):
+        """Start the timer for the current task"""
+
+        # Check if a task is selected
+        task_name = self.task_var.get()
+        if not task_name:
+            messagebox.showerror("Error", "Please select a task")
+            return
+
+        # Check if the timer is already running
+        if self.start_time:
+            messagebox.showerror("Error", "Timer is already running")
+            return
+
+        # Start the timer
+        self.current_task = self.tasks[task_name]
+        self.current_task.start()
+        self.start_time = datetime.now()
+
+        # Configure the UI
         self.start_btn.config(state="disabled")
-        self.pause_btn.config(state="disabled")
-        self.stop_btn.config(state="disabled")
-        self.update_time_label()
+        self.pause_btn.config(state="enabled")
+        self.stop_btn.config(state="enabled")
 
+    def create_task_from_entry(self):
+        """Create a new task with the name in the task_name_entry box"""
+        task_name = self.task_name_var.get()
 
+        if not task_name:
+            messagebox.showerror("Error", "Please enter a task name")
+            return
 
+        # Create the task object
+        task = Task(task_name)
+
+        # Add the task to the tasks dictionary
+        if task_name in self.tasks:
+            messagebox.showerror("Error", f"A task with the name '{task_name}' already exists.")
+        else:
+            self.tasks[task_name] = task
+            self.update_task_list()
+            self.task_name_var.set("")
+            self.task_combo.set(task_name)
+            messagebox.showinfo("Task Created", f"The task '{task_name}' has been created.")
+
+    def delete_task(self):
+        """Delete the currently selected task"""
+
+        task_name = self.task_var.get()
+
+        if not task_name:
+            messagebox.showerror("Error", "Please select a task to delete")
+            return
+
+        confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete the task '{task_name}'?")
+
+        if confirm:
+            del self.tasks[task_name]
+            self.update_task_list()
+            self.task_combo.set("")
+            messagebox.showinfo("Task Deleted", f"The task '{task_name}' has been deleted.")
+
+    def start_timer(self):
+        """Start the task timer"""
+
+        # Get the selected task
+        task_name = self.task_var.get()
+
+        if not task_name:
+            messagebox.showerror("Error", "Please select a task to start")
+            return
+
+        # Stop the current task if there is one
+        if self.current_task:
+            self.current_task.stop()
+            self.elapsed_time += datetime.now() - self.start_time
+            self.start_time = None
+            self.timer_var.set(str(self.elapsed_time).split(".")[0])
+
+        # Start the selected task
+        self.current_task = self.tasks[task_name]
+        self.current_task.start()
+
+        # Update the UI
+        self.start_btn.configure(state="disabled")
+        self.pause_btn.configure(state="normal")
+        self.stop_btn.configure(state="normal")
+        self.start_time = datetime.now()
+
+    def pause_timer(self):
+        """Pause the task timer"""
+
+        # Stop the current task
+        self.current_task.stop()
+        self.elapsed_time += datetime.now() - self.start_time
+        self.start_time = None
+
+        # Update the UI
+        self.start_btn.configure(state="normal")
+        self.pause_btn.configure(state="disabled")
+        self.stop_btn.configure(state="normal")
+
+        self.pause_btn.configure(text="Resume", command=self.resume_timer)
+        self.stop_btn.configure(state="disabled")
+    def stop_timer(self):
+        """Stop the task timer"""
+
+        # Stop the current task
+        self.current_task.stop()
+        self.elapsed_time += datetime.now() - self.start_time
+        self.start_time = None
+
+        # Update the task total time
+        self.current_task.total_time += self.elapsed_time
+
+        # Update the UI
+        self.start_btn.configure(state="normal")
+        self.pause_btn.configure(state="disabled")
+        self.stop_btn.configure(state="disabled")
+        self.timer_var.set("00:00:00")
+
+        # Reset the elapsed time
+        self.elapsed_time = timedelta(seconds=0)
+
+        # Save the tasks
+        self.save_tasks()
+
+        # Update the task list
+        self.update_task_list()
+
+    # def create_task(self):
+    #     """Create a new task with the name selected in the task combo box"""
+    #     task_name = self.task_var.get()
+    #     if task_name not in self.tasks:
+    #         self.tasks[task_name] = Task(task_name)
+    #     self.update_task_list()
+    #
+    # def create_task_from_entry(self):
+    #     """Create a new task with the name entered in the task name entry box"""
+    #     task_name = self.task_name_var.get()
+    #     if task_name and task_name not in self.tasks:
+    #         self.tasks[task_name] = Task(task_name)
+    #     self.update_task_list()
+    #
+    # def delete_task(self):
+    #     """Delete the selected task from the task list"""
+    #     task_name = self.task_listbox.get(tk.ACTIVE)
+    #     if task_name in self.tasks:
+    #         del self.tasks[task_name]
+    #         self.update_task_list()
+    #
+    # def start_timer(self):
+    #     """Start the timer for the selected task"""
+    #     task_name = self.task_var.get()
+    #     if task_name and task_name in self.tasks:
+    #         self.current_task = self.tasks[task_name]
+    #         self.start_time = datetime.now()
+    #         self.start_btn.config(state="disabled")
+    #         self.pause_btn.config(state="normal")
+    #         self.stop_btn.config(state="normal")
+    #         self.task_combo.config(state="disabled")
+    #         self.task_name_entry.config(state="disabled")
+    #         self.current_task.start()
+    #         self.update_timer()
+    #
+    # def pause_timer(self):
+    #     """Pause the timer for the selected task"""
+    #     self.current_task.stop()
+    #     self.start_btn.config(state="normal")
+    #     self.pause_btn.config(state="disabled")
+    #     self.stop_btn.config(state="normal")
+    #     self.task_combo.config(state="readonly")
+    #     self.task_name_entry.config(state="normal")
+    #
+    # def stop_timer(self):
+    #     """Stop the timer for the selected task"""
+    #     self.current_task.stop()
+    #     self.elapsed_time += datetime.now() - self.start_time
+    #     self.start_time = None
+    #     self.start_btn.config(stat.grid(row=0, column=0)
