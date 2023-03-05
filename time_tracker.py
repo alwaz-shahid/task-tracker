@@ -238,7 +238,6 @@ class TimeTracker(tk.Frame):
         self.task_start_btn.pack_forget()
         self.task_pause_btn.pack_forget()
         self.task_stop_btn.pack_forget()
-
     # Modify the add_task method to include a task name parameter
     def add_task(self, event=None, task_name=None):
         if task_name is None:
