@@ -1,114 +1,39 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QLCDNumber, QComboBox
-from PyQt5.QtCore import QTimer, Qt, QTime
+import datetime
 
-class TimeTracker(QWidget):
+tasks = {}
 
-    def __init__(self):
-        super().__init__()
-        self.tasks = {}
-        self.initUI()
+def start_timer(task_name):
+    tasks[task_name] = {"start_time": datetime.datetime.now(), "elapsed_time": datetime.timedelta(0)}
 
-    def initUI(self):
-        # Create widgets
-        self.task_label = QLabel("Task:")
-        self.task_combo = QComboBox()
-        self.task_combo.addItem("")
-        self.start_btn = QPushButton("Start")
-        self.pause_btn = QPushButton("Pause")
-        self.stop_btn = QPushButton("Stop")
-        self.time_lcd = QLCDNumber()
-        self.time_lcd.setDigitCount(8)
-        self.time_lcd.display("00:00:00")
+def stop_timer(task_name):
+    task = tasks.get(task_name)
+    if task:
+        task["elapsed_time"] += datetime.datetime.now() - task["start_time"]
+        print(f"Task: {task_name}, Time: {str(task['elapsed_time'])[:-4]}")
+        del tasks[task_name]
+    else:
+        print(f"No timer found for task {task_name}")
 
-        # Create layout
-        task_layout = QHBoxLayout()
-        task_layout.addWidget(self.task_label)
-        task_layout.addWidget(self.task_combo)
+def list_tasks():
+    for task_name, task in tasks.items():
+        elapsed_time = str(task['elapsed_time'])[:-4]
+        print(f"Task: {task_name}, Time: {elapsed_time}")
 
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.start_btn)
-        button_layout.addWidget(self.pause_btn)
-        button_layout.addWidget(self.stop_btn)
-
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(task_layout)
-        main_layout.addWidget(self.time_lcd)
-        main_layout.addLayout(button_layout)
-
-        # Set widget properties
-        self.start_btn.setEnabled(False)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-
-        # Set layout
-        self.setLayout(main_layout)
-
-        # Connect signals and slots
-        self.start_btn.clicked.connect(self.start_timer)
-        self.pause_btn.clicked.connect(self.pause_timer)
-        self.stop_btn.clicked.connect(self.stop_timer)
-        self.task_combo.currentTextChanged.connect(self.update_task_combo)
-
-        # Set timer
-        self.timer = QTimer()
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.update_time_lcd)
-
-    def update_task_combo(self):
-        current_task = self.task_combo.currentText()
-        if current_task:
-            self.start_btn.setEnabled(True)
+def main():
+    while True:
+        command = input("Enter command (start, stop, list, quit): ").lower()
+        if command == "quit":
+            break
+        elif command == "list":
+            list_tasks()
+        elif command == "start":
+            task_name = input("Enter task name: ")
+            start_timer(task_name)
+        elif command == "stop":
+            task_name = input("Enter task name: ")
+            stop_timer(task_name)
         else:
-            self.start_btn.setEnabled(False)
-
-    def start_timer(self):
-        current_task = self.task_combo.currentText()
-        self.tasks[current_task] = {"elapsed_time": QTime(0, 0, 0), "timer_id": self.timer.start()}
-
-        self.start_btn.setEnabled(False)
-        self.pause_btn.setEnabled(True)
-        self.stop_btn.setEnabled(True)
-
-    def pause_timer(self):
-        current_task = self.task_combo.currentText()
-        self.timer.stop()
-
-        if current_task in self.tasks:
-            self.tasks[current_task]["elapsed_time"] = self.tasks[current_task]["elapsed_time"].addMSecs(self.timer.remainingTime())
-            self.tasks[current_task]["timer_id"] = None
-
-        self.start_btn.setEnabled(True)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-
-    def stop_timer(self):
-        current_task = self.task_combo.currentText()
-        self.timer.stop()
-
-        if current_task in self.tasks:
-            self.tasks[current_task]["elapsed_time"] = self.tasks[current_task]["elapsed_time"].addMSecs(self.timer.remainingTime())
-            self.tasks[current_task]["timer_id"] = None
-
-            # Save time data
-            print(f"Task: {current_task}, Time: {self.tasks[current_task]['elapsed_time'].toString('hh:mm:ss')}")
-
-        self.start_btn.setEnabled(True)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-
-    def update_time_lcd(self):
-        current_task = self.task_combo.currentText()
-
-        if current_task in self.tasks and self.tasks[current_task]["timer_id"] is not None:
-            elapsed_time = self.tasks[current_task]["elapsed_time"].addMSecs(self.timer.remainingTime())
-            self.time_lcd.display(elapsed_time.toString("hh:mm:ss"))
-
-    def run(self):
-        self.show()
+            print("Invalid command")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    ex = TimeTracker()
-    ex.run()
-
+    main()
