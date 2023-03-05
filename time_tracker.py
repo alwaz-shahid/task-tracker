@@ -203,7 +203,6 @@ class TimeTracker(tk.Frame):
         button_layout.pack(pady=5)
 
         self.time_label.pack(pady=20)
-
         # Set timer
         self.timer_interval = 1000  # milliseconds
         self.last_update = datetime.now()
